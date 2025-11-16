@@ -126,12 +126,12 @@ fn main() -> Result<()> {
     let env = ExecutorEnv::builder().write(&input)?.build()?;
 
     // === PROVING PHASE ===
-    println!("🔒 Starting proving phase...");
+    println!(" Starting proving phase...");
     let prover = default_prover();
     let start = Instant::now();
     let prove_info = prover.prove(env, METHODS_ELF)?;
     let prove_time = start.elapsed();
-    println!("✅ Proof generated in {:.9}s", prove_time.as_secs_f64());
+    println!(" Proof generated in {:.9}s", prove_time.as_secs_f64());
 
     // Decode output
     let output: LinRegOutput = prove_info.receipt.journal.decode()?;
@@ -177,7 +177,7 @@ fn main() -> Result<()> {
         }))?;
 
         root_area.present()?;
-        println!("✅ Residuals plot saved to residuals_plot.png");
+        println!(" Residuals plot saved to residuals_plot.png");
     };
 
     // 3. Plot the regression coefficients
@@ -210,11 +210,11 @@ fn main() -> Result<()> {
         )?;
 
         root_area.present()?;
-        println!("✅ Coefficients plot saved to coefficients_plot.png");
+        println!("Coefficients plot saved to coefficients_plot.png");
     };
 
     // Display results
-    println!("\n📊 Linear Regression Results:");
+    println!("\n Linear Regression Results:");
     println!("  Coefficients (scaled):");
     for (i, &w_val) in output.w.iter().enumerate() {
         let w_real = w_val as f64 / scale_f;
@@ -229,14 +229,14 @@ fn main() -> Result<()> {
     println!("  R² Score:       {:.6}", 1.0 - mse / variance(&y_real));
     
     // === VERIFICATION PHASE ===
-    println!("\n🔍 Starting verification phase...");
+    println!("\n Starting verification phase...");
     let start_v = Instant::now();
     prove_info.receipt.verify(METHODS_ID)?;
     let verify_time = start_v.elapsed();
-    println!("✅ Proof verified in {:.6}ms", verify_time.as_secs_f64() * 1000.0);
+    println!(" Proof verified in {:.6}ms", verify_time.as_secs_f64() * 1000.0);
 
     // === PERFORMANCE ANALYSIS ===
-    println!("\n📈 Performance Analysis:");
+    println!("\n Performance Analysis:");
     println!("  Proof Size:      {} bytes", prove_info.receipt.journal.bytes.len());
     println!("  Proving Time:    {:.9}s", prove_time.as_secs_f64());
     println!("  Verification:    {:.6}ms", verify_time.as_secs_f64() * 1000.0);
@@ -247,16 +247,16 @@ fn main() -> Result<()> {
     println!("  Max Gradient:    {} (threshold: {})", output.max_grad_scaled, epsilon_scaled);
     println!("  Data Hash:       0x{}", hex::encode(&output.hash_data[..8]));
     if output.max_grad_scaled <= epsilon_scaled {
-        println!("  ✅ Gradient check passed!");
+        println!("   Gradient check passed!");
     } else {
-        println!("  ⚠️  Gradient exceeds threshold");
+        println!("    Gradient exceeds threshold");
     }
     
     // Match input/output hashes
     if output.hash_data == hash_data {
-        println!("  ✅ Data integrity verified!");
+        println!("   Data integrity verified!");
     } else {
-        println!("  ❌ Data hash mismatch!");
+        println!("   Data hash mismatch!");
     }
 
     Ok(())
@@ -392,7 +392,7 @@ fn plot_linear_regression(
         .draw()?;
 
     root_area.present()?;
-    println!("✅ Plot saved to {}", file_name);
+    println!(" Plot saved to {}", file_name);
     Ok(())
 }
 
