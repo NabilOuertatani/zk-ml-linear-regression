@@ -1,0 +1,70 @@
+{
+  "results": [
+    {
+      "name": "Small Dataset (10x3)",
+      "n": 10,
+      "d": 3,
+      "scale": 100,
+      "proving_time_ms": 86709.713289,
+      "verification_time_ms": 34.301041,
+      "total_time_ms": 86744.01433,
+      "proof_size_bytes": 228,
+      "mse": 1.79798,
+      "max_gradient": 751,
+      "success": true
+    },
+    {
+      "name": "Medium Dataset (50x5)",
+      "n": 50,
+      "d": 5,
+      "scale": 100,
+      "proving_time_ms": 184416.495926,
+      "verification_time_ms": 34.878799,
+      "total_time_ms": 184451.374725,
+      "proof_size_bytes": 244,
+      "mse": 5.223138,
+      "max_gradient": 3667,
+      "success": true
+    },
+    {
+      "name": "Large Dataset (100x7)",
+      "n": 100,
+      "d": 7,
+      "scale": 100,
+      "proving_time_ms": 373617.01812400005,
+      "verification_time_ms": 38.913441999999996,
+      "total_time_ms": 373655.931566,
+      "proof_size_bytes": 260,
+      "mse": 9.56762,
+      "max_gradient": 11838,
+      "success": true
+    },
+    {
+      "name": "Iris-sized Dataset (150x4)",
+      "n": 150,
+      "d": 4,
+      "scale": 100,
+      "proving_time_ms": 347079.905418,
+      "verification_time_ms": 42.923182999999995,
+      "total_time_ms": 347122.82860099996,
+      "proof_size_bytes": 236,
+      "mse": 5.11988,
+      "max_gradient": 16446,
+      "success": true
+    },
+    {
+      "name": "High Precision (50x5, scale=1000)",
+      "n": 50,
+      "d": 5,
+      "scale": 1000,
+      "proving_time_ms": 172375.238088,
+      "verification_time_ms": 35.471701,
+      "total_time_ms": 172410.70978900002,
+      "proof_size_bytes": 244,
+      "mse": 5.2407359,
+      "max_gradient": 36765,
+      "success": true
+    }
+  ],
+  "timestamp": "2025-11-21T12:49:59.633232291+01:00"
+}

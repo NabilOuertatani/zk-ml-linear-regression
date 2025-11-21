@@ -4,7 +4,7 @@ use methods::{METHODS_ELF, METHODS_ID};
 use serde::{Deserialize, Serialize};
 use plotters::prelude::*;
 
-// Types partagés (host <-> guest)
+// Shared types between host and guest
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LinRegInput {
     pub n: usize,
@@ -38,6 +38,15 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
 
+// Add benchmark module
+mod bench;
+use bench::{BenchmarkSuite, get_standard_benchmarks};
+
+// Add plotting module
+mod plot_benchmarks;
+use plot_benchmarks::generate_all_plots;
+
+/// Defines the command-line arguments for the application.
 #[derive(Parser, Debug)]
 #[command(author, version, about = "ZK Linear Regression (RISC Zero)")]
 struct Args {
@@ -45,6 +54,10 @@ struct Args {
     dataset: Option<String>,
     #[arg(long)]
     synthetic: bool,
+    #[arg(long)]
+    benchmark: bool,
+    #[arg(long)]
+    plot_benchmarks: bool,  // Add this new flag
     #[arg(long, default_value_t = 150)]
     n: usize,
     #[arg(long, default_value_t = 4)]
@@ -60,13 +73,26 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    // Parse command-line arguments
     let args = Args::parse();
+
+    // If plot benchmarks mode is enabled, generate plots from existing results
+    if args.plot_benchmarks {
+        return generate_all_plots("benchmark_results.json");
+    }
+
+    // If benchmark mode is enabled, run benchmarks instead
+    if args.benchmark {
+        return run_benchmarks();
+    }
+
     if args.dataset.is_none() && !args.synthetic {
         return Err(anyhow!("Specify --dataset path or --synthetic"));
     }
 
-    println!("=== ZK Linear Regression on Iris ===\n");
+    println!(" ZK Linear Regression on Iris \n");
 
+    // Load data from a file or generate synthetic data
     let (x_real, y_real, feature_names) = if let Some(path) = args.dataset.clone() {
         load_iris(&path)?
     } else {
@@ -86,20 +112,20 @@ fn main() -> Result<()> {
     }
     println!();
 
-    // Train w (least squares)
+    // Train weights 'w' using the least squares method
     let w_real = {
         let xtx = &x_real.transpose() * &x_real;
         let xty = &x_real.transpose() * &y_real;
         xtx.lu().solve(&xty).ok_or_else(|| anyhow!("Matrix inversion failed"))?
     };
 
-    // Scale to fixed-point
+    // Scale floating-point data to fixed-point integers for the ZKVM
     let scale_f = args.scale as f64;
     let x_scaled: Vec<i64> = x_real.iter().map(|v| (v * scale_f).round() as i64).collect();
     let y_scaled: Vec<i64> = y_real.iter().map(|v| (v * scale_f).round() as i64).collect();
     let w_scaled: Vec<i64> = w_real.iter().map(|v| (v * scale_f).round() as i64).collect();
 
-    // Hash data
+    // Hash the original data for integrity check inside the ZKVM
     let mut hasher = Sha256::new();
     for val in x_real.iter() {
         hasher.update(val.to_le_bytes());
@@ -111,6 +137,7 @@ fn main() -> Result<()> {
 
     let epsilon_scaled = (args.epsilon * scale_f).ceil() as i64;
 
+    // Prepare the input for the guest code
     let input = LinRegInput {
         n,
         d,
@@ -122,10 +149,10 @@ fn main() -> Result<()> {
         hash_data,
     };
 
-    // Build execution environment
+    // Build the execution environment for the ZKVM
     let env = ExecutorEnv::builder().write(&input)?.build()?;
 
-    // === PROVING PHASE ===
+    // PROVING PHASE 
     println!(" Starting proving phase...");
     let prover = default_prover();
     let start = Instant::now();
@@ -133,7 +160,7 @@ fn main() -> Result<()> {
     let prove_time = start.elapsed();
     println!(" Proof generated in {:.9}s", prove_time.as_secs_f64());
 
-    // Decode output
+    // Decode the public output from the receipt
     let output: LinRegOutput = prove_info.receipt.journal.decode()?;
 
     // 1. Plot the linear regression
@@ -147,14 +174,14 @@ fn main() -> Result<()> {
 
     // 2. Plot the residuals
     {
-        // Convertir les poids (w) en f64
+        // Convert weights (w) back to f64
         let w_real_vec: Vec<f64> = output.w.iter().map(|&wi| wi as f64 / scale_f).collect();
         let w_real = DVector::from_vec(w_real_vec);
 
-        // Calculer les valeurs prédites: y_pred = X * w
+        // Calculate predicted values: y_pred = X * w
         let y_pred = &x_real * &w_real;
 
-        // Calculer les résidus: residuals = y_real - y_pred
+        // Calculate residuals: residuals = y_real - y_pred
         let residuals_vec: Vec<f64> = (&y_real - y_pred).iter().cloned().collect();
 
         let root_area = BitMapBackend::new("residuals_plot.png", (640, 480)).into_drawing_area();
@@ -228,21 +255,21 @@ fn main() -> Result<()> {
     println!("  MSE:            {:.6}", mse);
     println!("  R² Score:       {:.6}", 1.0 - mse / variance(&y_real));
     
-    // === VERIFICATION PHASE ===
+    //  VERIFICATION PHASE 
     println!("\n Starting verification phase...");
     let start_v = Instant::now();
     prove_info.receipt.verify(METHODS_ID)?;
     let verify_time = start_v.elapsed();
     println!(" Proof verified in {:.6}ms", verify_time.as_secs_f64() * 1000.0);
 
-    // === PERFORMANCE ANALYSIS ===
+    // PERFORMANCE ANALYSIS 
     println!("\n Performance Analysis:");
     println!("  Proof Size:      {} bytes", prove_info.receipt.journal.bytes.len());
     println!("  Proving Time:    {:.9}s", prove_time.as_secs_f64());
     println!("  Verification:    {:.6}ms", verify_time.as_secs_f64() * 1000.0);
     println!("  Total Time:      {:.9}s", (prove_time + verify_time).as_secs_f64());
     
-    // === CORRECTNESS CHECK ===
+    //  CORRECTNESS CHECK 
     println!("\n✓ Correctness Check:");
     println!("  Max Gradient:    {} (threshold: {})", output.max_grad_scaled, epsilon_scaled);
     println!("  Data Hash:       0x{}", hex::encode(&output.hash_data[..8]));
@@ -262,22 +289,45 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Run the benchmark suite
+fn run_benchmarks() -> Result<()> {
+   
+    println!("   ZK LINEAR REGRESSION BENCHMARK SUITE");
+    
+
+    let mut suite = BenchmarkSuite::new();
+    let benchmarks = get_standard_benchmarks();
+
+    for config in benchmarks {
+        if let Err(e) = suite.run_benchmark(config, METHODS_ELF, METHODS_ID) {
+            eprintln!(" Benchmark failed: {}", e);
+        }
+    }
+
+    suite.print_summary();
+    suite.save_to_file("benchmark_results.json")?;
+
+    Ok(())
+}
+
+/// Calculates the variance of a vector of f64 values.
 fn variance(y: &DVector<f64>) -> f64 {
     let mean = y.mean();
     y.iter().map(|&val| (val - mean).powi(2)).sum::<f64>() / y.len() as f64
 }
 
+/// Generates synthetic data for linear regression.
 fn gen_synth(n: usize, d: usize) -> Result<(DMatrix<f64>, DVector<f64>, Vec<String>)> {
     let mut rng = StdRng::seed_from_u64(42);
     let mut x = DMatrix::<f64>::zeros(n, d);
     for i in 0..n {
-        x[(i, 0)] = 1.0;
+        x[(i, 0)] = 1.0; // Bias term
         for j in 1..d {
-            x[(i, j)] = rng.random_range(-1.0..1.0);
+            x[(i, j)] = rng.gen_range(-1.0..1.0);
         }
     }
     let true_w = DVector::<f64>::from_fn(d, |i, _| {
-        if i == 0 { 0.5 } else { rng.random_range(-2.0..2.0) }
+        if i == 0 { 0.5 } else { rng.gen_range(-2.0..2.0) }
     });
     let mut y = DVector::<f64>::zeros(n);
     for i in 0..n {
@@ -285,13 +335,14 @@ fn gen_synth(n: usize, d: usize) -> Result<(DMatrix<f64>, DVector<f64>, Vec<Stri
         for j in 0..d {
             acc += x[(i, j)] * true_w[j];
         }
-        let noise: f64 = rng.random_range(-0.01..0.01);
+        let noise: f64 = rng.gen_range(-0.01..0.01);
         y[i] = acc + noise;
     }
     let names = (0..d).map(|j| format!("f{}", j)).collect();
     Ok((x, y, names))
 }
 
+/// Loads the Iris dataset from a CSV file.
 fn load_iris(path: &str) -> Result<(DMatrix<f64>, DVector<f64>, Vec<String>)> {
     let file = File::open(Path::new(path))?;
     let mut rdr = csv::ReaderBuilder::new()
@@ -330,6 +381,7 @@ fn load_iris(path: &str) -> Result<(DMatrix<f64>, DVector<f64>, Vec<String>)> {
     Ok((x, y, names))
 }
 
+/// Plots the linear regression line against the data points.
 fn plot_linear_regression(
     x: &DMatrix<f64>,
     y: &DVector<f64>,
@@ -340,8 +392,8 @@ fn plot_linear_regression(
     let root_area = BitMapBackend::new(file_name, (640, 480)).into_drawing_area();
     root_area.fill(&WHITE)?;
 
-    // Déterminer les plages du graphique à partir des données
-    // Nous utilisons la deuxième colonne de x (par exemple, sepal_length) pour l'axe des x
+    // Determine chart ranges from data
+    // We use the second column of x (e.g., sepal_length) for the x-axis
     let min_x = x.column(1).min();
     let max_x = x.column(1).max();
     let min_y = y.min();
@@ -356,7 +408,7 @@ fn plot_linear_regression(
 
     chart.configure_mesh().draw()?;
 
-    // Dessiner les points de données (nuage de points)
+    // Draw the data points (scatter plot)
     chart.draw_series(
         x.column(1)
             .iter()
@@ -366,14 +418,14 @@ fn plot_linear_regression(
     .label("Data Points")
     .legend(|(x, y)| Circle::new((x, y), 3, BLUE.filled()));
 
-    // Dessiner la ligne de régression
+    // Draw the regression line
     let w_real: Vec<f64> = w.iter().map(|&wi| wi as f64 / scale as f64).collect();
     let line_series = LineSeries::new(
         (0..=100).map(|i| {
             let x_val = min_x + (max_x - min_x) * (i as f64 / 100.0);
-            // Note : Ceci suppose un modèle simple y = w0 + w1*x1.
-            // Pour un modèle multivarié, vous devez choisir quelles caractéristiques visualiser.
-            // Ici, nous supposons que w[0] est le biais et w[1] est le coefficient pour x.column(1).
+            // Note: This assumes a simple model y = w0 + w1*x1.
+            // For a multivariate model, you must choose which features to visualize.
+            // Here, we assume w[0] is the bias and w[1] is the coefficient for x.column(1).
             let y_val = w_real[0] + w_real[1] * x_val;
             (x_val, y_val)
         }),
